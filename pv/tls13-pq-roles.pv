@@ -1,0 +1,72 @@
+(* ==================================================================== *)
+(*  Phase 3 -- non-static roles: role-confusion / unknown-key-share.     *)
+(*  Run:  proverif -lib tls-lib-pq tls13-pq-roles.pv                     *)
+(*                                                                       *)
+(*  A principal runs BOTH the initiator (KEM keygen+decap) and the       *)
+(*  responder (KEM encap) over the SHARED long-term keys / PSKs, against *)
+(*  one active attacker.  Server-authenticated only (no client certs).   *)
+(*  Isolated from the robustness model so the typed role processes do    *)
+(*  not collide with the robustness standalone processes (same MLKEM_13_ *)
+(*  C/S constructors).  Two share encodings are exercised:               *)
+(*    - typed : ek:kem_pub, ct:kem_ct          (confusion type-blocked)  *)
+(*    - raw   : ek,ct both bitstring           (confusion EXPRESSIBLE)   *)
+(*  so we test whether the KEM asymmetry creates a confusion that DH     *)
+(*  symmetry did not, and whether the type distinction was load-bearing. *)
+(* ==================================================================== *)
+
+(* Non-vacuity: each responder role actually completes.  EXPECT: false (= reachable). *)
+query p:pubkey, ek:kem_pub, ct:kem_ct, k:ae_key; event(ResponderAgree(p,ek,ct,k)).
+query p:pubkey, ek:bitstring, ct:bitstring, k:ae_key; event(ResponderAgreeRaw(p,ek,ct,k)).
+
+(* (1) Unknown-key-share, typed shares.  If an initiator and a responder
+   derive the SAME application key, they agree on the peer identity and the
+   KEM shares.  EXPECT: true. *)
+query p:pubkey, p':pubkey, ek:kem_pub, ek':kem_pub, ct:kem_ct, ct':kem_ct, k:ae_key;
+      (event(InitiatorAgree(p,ek,ct,k)) && event(ResponderAgree(p',ek',ct',k)))
+      ==> (p = p' && ek = ek' && ct = ct').
+
+(* (1') Unknown-key-share, RAW shares (ek/ct same type, confusion expressible).
+   EXPECT: true (transcript binding + KEM decap structure still prevent it). *)
+query p:pubkey, p':pubkey, ek:bitstring, ek':bitstring, ct:bitstring, ct':bitstring, k:ae_key;
+      (event(InitiatorAgreeRaw(p,ek,ct,k)) && event(ResponderAgreeRaw(p',ek',ct',k)))
+      ==> (p = p' && ek = ek' && ct = ct').
+
+(* (2) Injective agreement: the initiator authenticates the responder.  Every
+   initiator session that completes apparently with responder p matches a
+   distinct responder session at p, unless the cert key / hash / KEM is weak.
+   EXPECT: true. *)
+query p:pubkey, ek:kem_pub, ct:kem_ct, k:ae_key, cr':random, sr':random;
+      inj-event(InitiatorAgree(p,ek,ct,k)) ==>
+      inj-event(ResponderAgree(p,ek,ct,k)) ||
+      event(WeakOrCompromisedKey(p)) ||
+      event(ServerKEXMode(cr',sr',p,TLS13,Standalone(WeakKEM))) ||
+      event(ServerChoosesHash(cr',sr',p,TLS13,WeakHash)).
+
+(* (2-tight) Drop the WeakKEM disjunct, to isolate whether a broken KEM also
+   breaks this agreement.  EXPECT: false -- it does.  Authentication requires
+   BOTH the CertificateVerify signature AND the server Finished MAC; with a
+   compromised PSK a broken KEM forges the Finished (the handshake secret
+   becomes public), so the initiator completes with no genuine responder.  The
+   attack trace uses StrongHash (no signature collision), so this is the same
+   weak-KEX + compromised-PSK Finished-forgery as classical WeakDH (cf. the
+   DHE_13(WeakDH) disjunct in the robustness model) -- NOT specific to the KEM
+   asymmetry.  It confirms the robustness contrast extends from confidentiality
+   to authentication. *)
+query p:pubkey, ek:kem_pub, ct:kem_ct, k:ae_key, cr':random, sr':random;
+      inj-event(InitiatorAgree(p,ek,ct,k)) ==>
+      inj-event(ResponderAgree(p,ek,ct,k)) ||
+      event(WeakOrCompromisedKey(p)) ||
+      event(ServerChoosesHash(cr',sr',p,TLS13,WeakHash)).
+
+(* (2') Injective agreement, RAW shares.  EXPECT: true. *)
+query p:pubkey, ek:bitstring, ct:bitstring, k:ae_key, cr':random, sr':random;
+      inj-event(InitiatorAgreeRaw(p,ek,ct,k)) ==>
+      inj-event(ResponderAgreeRaw(p,ek,ct,k)) ||
+      event(WeakOrCompromisedKey(p)) ||
+      event(ServerKEXMode(cr',sr',p,TLS13,Standalone(WeakKEM))) ||
+      event(ServerChoosesHash(cr',sr',p,TLS13,WeakHash)).
+
+process (
+	 !longTermKeysProc() |
+	 !Client13_kem_roles() | !Server13_kem_roles() |
+	 !Client13_kem_raw()   | !Server13_kem_raw() )

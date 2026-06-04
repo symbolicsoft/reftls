@@ -1,0 +1,47 @@
+(* ==================================================================== *)
+(*  Phase 1b -- KEM key reuse and forward secrecy.                       *)
+(*  Run:  proverif -lib tls-lib-pq tls13-pq-reuse.pv                     *)
+(*                                                                       *)
+(*  Isolated from the robustness model (tls13-pq.pv) on purpose: a       *)
+(*  reused KEM keypair plus the appData/serverSession machinery would    *)
+(*  perturb the robustness queries, so the reuse experiment runs on its  *)
+(*  own (sharing only the library).  A single long-lived (dk,ek) is      *)
+(*  reused across unbounded standalone-ML-KEM client sessions and the    *)
+(*  decapsulation key dk is leaked AFTER the sessions complete (phase 1). *)
+(* ==================================================================== *)
+
+(* Non-vacuity: the reused-key client actually completes a handshake.
+   EXPECT: false (= reachable). *)
+query cr:random, sr:random, p:pubkey, psk:preSharedKey;
+      event(ReuseClientDone(cr,sr,p,psk)).
+
+(* Forward secrecy under reuse.  m_cr (a payload sent under a reused-key
+   session) stays secret UNLESS the reused key is later compromised, or a
+   usual weakness was negotiated.  EXPECT: true.
+   Contrast: the EPHEMERAL standalone query attacker(m_c) in tls13-pq.pv is
+   true with NO reuse disjunct -- ephemeral standalone is forward-secret;
+   reuse trades that away. *)
+query cr:random, sr:random, psk:preSharedKey, p:pubkey, cr':random, sr':random;
+      attacker(m_cr(TLS13,cr,sr,p,psk)) ==>
+      event(ReusedKEMKeyCompromised) ||
+      event(ServerKEXMode(cr,sr,p,TLS13,Standalone(WeakKEM))) ||
+      (event(WeakOrCompromisedKey(p)) && (psk = NoPSK || event(CompromisedPreSharedKey(psk)))) ||
+      event(ServerChoosesAE(cr,sr,p,TLS13,WeakAE)) ||
+      event(ServerChoosesHash(cr',sr',p,TLS13,WeakHash)).
+
+(* Tightness: drop the reuse-compromise disjunct.  EXPECT: false
+   (compromise of the reused key is genuinely what breaks forward secrecy;
+   the disjunct is load-bearing).  Together with the query above being true,
+   this is the formal statement of "reuse -> limited forward secrecy". *)
+query cr:random, sr:random, psk:preSharedKey, p:pubkey, cr':random, sr':random;
+      attacker(m_cr(TLS13,cr,sr,p,psk)) ==>
+      event(ServerKEXMode(cr,sr,p,TLS13,Standalone(WeakKEM))) ||
+      (event(WeakOrCompromisedKey(p)) && (psk = NoPSK || event(CompromisedPreSharedKey(psk)))) ||
+      event(ServerChoosesAE(cr,sr,p,TLS13,WeakAE)) ||
+      event(ServerChoosesHash(cr',sr',p,TLS13,WeakHash)).
+
+process (
+	 !longTermKeysProc() |
+	 ReusedKEMKeyHolder() |
+	 !Client13_kem_reuse() |
+	 !Server13_kem() )
