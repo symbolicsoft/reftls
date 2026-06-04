@@ -1,24 +1,53 @@
 # RefTLS
+
+RefTLS is a verified reference implementation of TLS, accompanied by symbolic
+models verified with [ProVerif](http://proverif.inria.fr) and computational
+models verified with [CryptoVerif](http://cryptoverif.inria.fr).
+
+* [`pv/`](pv/) — ProVerif symbolic models (see also [pv/README.md](pv/README.md))
+* [`cv/`](cv/) — CryptoVerif computational models (see also [cv/README.md](cv/README.md))
+* [`code/`](code/) — RefTLS reference implementation in Flow/JavaScript (research prototype; see [code/README.md](code/README.md))
+* [`paper/`](paper/) — accompanying papers:
+    * [RR-9040.pdf](paper/RR-9040.pdf): *Verified Models and Reference Implementations for the TLS 1.3 Standard Candidate* (Inria Research Report 9040)
+    * [tls-hybrid.pdf](paper/tls-hybrid.pdf): analysis of hybrid (post-quantum) key exchange for TLS 1.3
+
 ## Symbolic Verification with ProVerif
 
 [Download ProVerif from the ProVerif website](http://proverif.inria.fr).
 
 The `.pv` files corresponding to various combinations of the protocol should be run by the command:
 
-    proverif -lib tls-lib <filename>
+    proverif -lib <library> <filename>
 
-They use the library `tls-lib.pvl` provided below.
+where `<library>` is the matching ProVerif library (without the `.pvl` extension)
+listed alongside each model below.
 
-### Generic Library with Threat Model and Protocol Processes
+### Generic Libraries with Threat Model and Protocol Processes
 
-* [tls-lib.pvl](pv/tls-lib.pvl)
+* [tls-lib.pvl](pv/tls-lib.pvl) — TLS 1.2 and TLS 1.3 (draft 18)
+* [tls-lib-draft20.pvl](pv/tls-lib-draft20.pvl) — TLS 1.3 (draft 20)
+* [tls-lib-rfc8446.pvl](pv/tls-lib-rfc8446.pvl) — TLS 1.3 (RFC 8446, final)
+* [tls-lib-pq.pvl](pv/tls-lib-pq.pvl) — TLS 1.3 with hybrid and standalone post-quantum (ML-KEM) key exchange
 
 
 ### ProVerif Models for TLS 1.2 and TLS 1.3
 
-*   TLS 1.2 only: [tls12.pv](pv/tls12.pv)
-*   TLS 1.3 (draft 18) DHE+PSK 0-RTT+1-RTT: [tls13-draft18-only.pv](pv/tls13-draft18-only.pv)
-*   TLS 1.2 + TLS 1.3 (draft 18): [tls12-tls13-draft18.pv](pv/tls12-tls13-draft18.pv)
+Each model is run with the library named on its line:
+
+*   TLS 1.2 only: [tls12.pv](pv/tls12.pv) — `proverif -lib tls-lib tls12.pv`
+*   TLS 1.3 (draft 18) DHE+PSK 0-RTT+1-RTT: [tls13-draft18-only.pv](pv/tls13-draft18-only.pv) — `proverif -lib tls-lib tls13-draft18-only.pv`
+*   TLS 1.2 + TLS 1.3 (draft 18): [tls12-tls13-draft18.pv](pv/tls12-tls13-draft18.pv) — `proverif -lib tls-lib tls12-tls13-draft18.pv`
+*   TLS 1.3 (draft 20): [tls13-draft20-only.pv](pv/tls13-draft20-only.pv) — `proverif -lib tls-lib-draft20 tls13-draft20-only.pv`
+*   TLS 1.3 (RFC 8446): [tls13-rfc8446-only.pv](pv/tls13-rfc8446-only.pv) — `proverif -lib tls-lib-rfc8446 tls13-rfc8446-only.pv`
+
+### ProVerif Models for Post-Quantum (Hybrid) TLS 1.3
+
+These models extend the RFC 8446 handshake with standalone and hybrid ML-KEM key
+exchange and are run with the `tls-lib-pq` library:
+
+*   Robustness — combined classical, standalone ML-KEM, and hybrid key exchange: [tls13-pq.pv](pv/tls13-pq.pv) — `proverif -lib tls-lib-pq tls13-pq.pv`
+*   KEM key reuse and forward secrecy: [tls13-pq-reuse.pv](pv/tls13-pq-reuse.pv) — `proverif -lib tls-lib-pq tls13-pq-reuse.pv`
+*   Non-static roles (role confusion / unknown-key-share): [tls13-pq-roles.pv](pv/tls13-pq-roles.pv) — `proverif -lib tls-lib-pq tls13-pq-roles.pv`
 
 
 ### Understanding the results
@@ -65,13 +94,13 @@ The library `tls-lib.cvl` has been obtained by adding the following primitives `
 #### Initial handshake (Section 6.4)
 
 * [tls13-core-InitialHandshake.cv](cv/tls13-core-InitialHandshake.cv)
-* [tls13-core-InitialHandshake-1RTT-only.cv](cv/tls13-core-InitialHandshake-1RTT-only.cv)
+* [tls13-core-InitialHandshake-1RTT-only.cv](cv/tls13-core-InitialHandshake-1RTTonly.cv)
 
 The first file deals with 0.5-RTT and 1-RTT messages. The second one supports only 1-RTT (but proves stronger properties from server to client messages).
 
 #### Handshake with pre-shared key (Section 6.5)
 
-* tls13-core-PSKandPSKDHE-NoCorruption.cv
+* [tls13-core-PSKandPSKDHE-NoCorruption.cv](cv/tls13-core-PSKandPSKDHE-NoCorruption.cv)
 
 #### Record Protocol (Section 6.6)
 
